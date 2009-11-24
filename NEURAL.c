@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <error.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "rn.h"
 
@@ -49,6 +50,7 @@ void ler_RN(MLP **RN, int fd)
 
 void ler_RN_e_W(MLP **RN, int fd)
 {
+	ler_RN(RN, instream);
 
 	FILE *instream = fdopen(fd, "r");
 
@@ -140,8 +142,8 @@ void treinar(MLP *RN)
 		for (int i = 0; i < RN->QT_TREINAMENTO; i++)
 			erro += learn(RN, RN->TREINAMENTOS[i], RN->TREINAMENTOS[i] + RN->QT_INPUT);
 		erro /= (float) RN->QT_TREINAMENTO;
-		i++;
-	} while ((erro >= max_error) && (i < max_iter));
+		itr++;
+	} while ((erro >= max_error) && (itr < max_iter));
 
 }
 
