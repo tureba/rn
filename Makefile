@@ -1,7 +1,9 @@
 
-CFLAGS=-lm
+CFLAGS=-lm -pipe -Wall -Wextra -std=c99 -ggdb
 
 all: NEURAL
 
+NEURAL: rn.o
+
 clean:
-	rm NEURAL
+	-rm -f NEURAL *.o
