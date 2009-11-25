@@ -20,6 +20,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <alloca.h>
+#include <string.h>
+#include <math.h>
 
 #include "rn.h"
 
@@ -97,8 +100,8 @@ void mais_treinamento(MLP *RN, const char *arq)
 
 	if (fclose(instream) == EOF)
 		error(47, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-	if (close(fd) == -1)
-		error(48, errno, "erro ao fechar o arquivo '%s'", arq);
+//	if (close(fd) == -1)
+//		error(48, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -127,17 +130,17 @@ void carregar_RN(MLP **RN, const char *arq)
 
 		if (fclose(instream) == EOF)
 			error(45, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-	}
 
-	if (close(fd) == -1)
-		error(46, errno, "erro ao fechar o arquivo '%s'", arq);
+//		if (close(fd) == -1)
+//			error(46, errno, "erro ao fechar o arquivo '%s'", arq);
+	}
 
 }
 
 void treinar(MLP *RN)
 {
 	float erro = 0;
-	int itr = 0;
+	int itr = 0, progresso = 0, a;
 	do {
 		shuffle(RN->TREINAMENTOS, RN->QT_TREINAMENTO);
 
@@ -146,6 +149,13 @@ void treinar(MLP *RN)
 			erro += learn(RN, RN->TREINAMENTOS[i], RN->TREINAMENTOS[i] + RN->QT_INPUT);
 		erro /= (float) RN->QT_TREINAMENTO;
 		itr++;
+		if (verbose) {
+			a = max(100.0 * erro / max_error, 100.0 * itr / max_iter);
+			while (a > progresso) {
+				putchar('.');
+				progresso++;
+			}
+		}
 	} while ((erro >= max_error) && (itr < max_iter));
 
 }
@@ -193,8 +203,8 @@ void salvar_RN(MLP *RN, const char *arq)
 
 	if (fclose(outstream) == EOF)
 		error(43, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-	if (close(fd) == -1)
-		error(44, errno, "erro ao fechar o arquivo '%s'", arq);
+//	if (close(fd) == -1)
+//		error(44, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -270,7 +280,85 @@ void treinar_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 		error(40, errno, "erro ao fechar o arquivo '%s'", arq2);
 }
 
-void processar_dados(MLP *RN, const char *arq)
+int processar_bmp(MLP *RN, const char *arq_e)
+{
+	if ((RN->QT_INPUT != 36) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 4))
+		error(49, 0, "a rede neural não tem a topologia certa para processar imagens");
+
+	BMP_header hdr_e, hdr_s;
+	int fd_e = open(arq_e, O_RDONLY);
+	if (fd_e == -1)
+		error(50, errno, "erro ao abrir o arquivo da imagem '%s' a ser processada", arq_e);
+
+	if (read(fd_e, &hdr_e, sizeof(BMP_header)) == -1)
+		error(51, errno, "erro ao ler o cabeçalho do arquivo de imagem '%s'", arq_e);
+
+	if ((hdr_e.tag[0] != 'B') || (hdr_e.tag[1] != 'M')) {
+		if (close(fd_e) == -1)
+			error(54, errno, "erro ao fechar o arquivo de imagem '%s'", arq_e);
+		return 0;
+	}
+
+	if ((hdr_e.bits_per_pixel != 32) || (hdr_e.compression != 3))
+		error(52, 0, "a imagem '%s' (%d bpp, %d de compressão) não está no formato adequado", arq_e, hdr_e.bits_per_pixel, hdr_e.compression);
+
+	uint8_t *p;
+	p = mmap(NULL, 4 * hdr_e.image_width * hdr_e.image_height + hdr_e.data_offset, PROT_READ, MAP_SHARED, fd_e, 0);
+	if (p == ((void *) -1))
+		error(55, errno, "erro ao mapear a imagem '%s' na memória principal", arq_e);
+	uint8_t *ptr = p + hdr_e.data_offset;
+
+	const char *prefix = "saida_";
+	char *arq_s = alloca(strlen(arq_e) + sizeof(prefix));
+	strcpy(arq_s, prefix);
+	strcat(arq_s + sizeof(prefix), arq_e);
+
+	int fd_s = open(arq_s, O_WRONLY|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR);
+	if (fd_s == -1)
+		error(58, errno, "erro ao abrir o arquivo da imagem de saída '%s'", arq_s);
+
+	memcpy(&hdr_s, &hdr_e, sizeof(BMP_header));
+	hdr_s.image_width -= 2;
+	hdr_s.image_height -= 2;
+	hdr_s.data_offset = sizeof(BMP_header);
+	if (write(fd_s, &hdr_s, sizeof(BMP_header) != sizeof(BMP_header)))
+		error(57, errno, "erro ao escrever o cabeçalho BMP da imagem de saída '%s'", arq_s);
+
+	float entrada[RN->QT_INPUT], saida[RN->QT_NEU[RN->QT_LAYERS - 1]];
+	uint8_t isaida[RN->QT_NEU[RN->QT_LAYERS - 1]];
+	for (unsigned int i = 1; i < (hdr_e.image_width - 1); i++)
+		for (unsigned int j = 1; j < (hdr_e.image_height - 1); j++) {
+			int k = 0;
+			for (int a = -1; a <= 1; a++)
+				for (int b = -1; b <= 1; b++) {
+					entrada[k] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 0]/255.0f;
+					entrada[k + 1] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 1]/255.0f;
+					entrada[k + 2] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 2]/255.0f;
+					entrada[k + 3] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 3]/255.0f;
+					k += 4;
+				}
+			execute(RN, entrada, saida);
+			for (int l = 0; l < RN->QT_NEU[RN->QT_LAYERS - 1]; l++)
+				isaida[l] = ((uint8_t) saida[l] * 255);
+
+			if (write(fd_s, isaida, (sizeof(uint8_t) * RN->QT_NEU[RN->QT_LAYERS - 1])) != (ssize_t) (sizeof(uint8_t) * RN->QT_NEU[RN->QT_LAYERS - 1]))
+				error(56, errno, "erro ao escrever a imagem de saída '%s'", arq_s);
+		}
+
+	if (munmap(ptr - hdr_e.data_offset, 4 * hdr_e.image_width * hdr_e.image_height + hdr_e.data_offset) == -1)
+		error(53, errno, "erro ao desmapear o arquivo '%s' da memória", arq_e);
+
+	if (close(fd_e) == -1)
+		error(54, errno, "erro ao fechar o arquivo de imagem '%s'", arq_e);
+
+	if (close(fd_s) == -1)
+		error(57, errno, "erro ao fechar o arquivo de imagem de saída '%s'", arq_s);
+
+	return 1;
+
+}
+
+void processar_texto(MLP *RN, const char *arq)
 {
 
 	int fd = open(arq, O_RDONLY);
@@ -303,8 +391,17 @@ void processar_dados(MLP *RN, const char *arq)
 
 	if (fclose(instream) == EOF)
 		error(41, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-	if (close(fd) == -1)
-		error(42, errno, "erro ao fechar o arquivo '%s'", arq);
+//	if (close(fd) == -1)
+//		error(42, errno, "erro ao fechar o arquivo '%s'", arq);
+
+}
+
+void processar_dados(MLP *RN, const char *arq)
+{
+
+	if (!processar_bmp(RN, arq))
+		processar_texto(RN, arq);
+
 }
 
 void mostra_help(const char *prog)
