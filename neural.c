@@ -91,11 +91,14 @@ void mais_treinamento(MLP *RN, const char *arq)
 	FILE *instream = fdopen(fd, "r");
 
 	if (instream == NULL)
-		error(22, errno, "erro ao chamar fdopen");
+		error(21, errno, "erro ao chamar fdopen");
 
 	ler_treinamento(RN, instream);
 
-	close(fd);
+	if (fclose(instream) == EOF)
+		error(47, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+	if (close(fd) == -1)
+		error(48, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -121,9 +124,13 @@ void carregar_RN(MLP **RN, const char *arq)
 
 		ler_RN_e_W(RN, instream);
 		ler_treinamento(*RN, instream);
+
+		if (fclose(instream) == EOF)
+			error(45, errno, "erro ao fechar a stream do arquivo '%s'", arq);
 	}
 
-	close(fd);
+	if (close(fd) == -1)
+		error(46, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -184,14 +191,16 @@ void salvar_RN(MLP *RN, const char *arq)
 		fputc('\n', outstream);
 	}
 
-	fclose(outstream);
-	close(fd);
+	if (fclose(outstream) == EOF)
+		error(43, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+	if (close(fd) == -1)
+		error(44, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
-void ensina_com_bmp(MLP *RN, const char *arq1, const char *arq2)
+void treinar_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 {
-	if (RN->QT_INPUT != 36)
+	if ((RN->QT_INPUT != 36) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 4))
 		error(32, 0, "a rede neural não tem a topologia certa para processar imagens");
 
 	BMP_header hdr1, hdr2;
@@ -201,9 +210,10 @@ void ensina_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 
 	if ((read(fd1, &hdr1, sizeof(BMP_header)) == -1) || (read(fd2, &hdr2, sizeof(BMP_header)) == -1))
 		error(27, errno, "erro ao ler o cabeçalho do arquivo '%s' ou do arquivo '%s'", arq1, arq2);
+
 	if ((hdr1.tag[0] != 'B') || (hdr1.tag[1] != 'M') || (hdr2.tag[0] != 'B') || (hdr2.tag[1] != 'M'))
-		error(28, 0, "ou o arquivo '%s' (%c%c) ou o arquivo '%s' (%c%c) não é BMP", arq1, hdr1.tag[0], hdr1.tag[1], arq2, hdr2.tag[0], hdr2.tag[1]);
-	//if ((hdr1.color_planes != 1) || (hdr1.bits_per_pixel != 32) || (hdr1.compression != 0) || (hdr1.colors_in_pallete != 0) ||
+		error(28, 0, "ou o arquivo '%s' (tag %c%c) ou o arquivo '%s' (tag %c%c) não é BMP", arq1, hdr1.tag[0], hdr1.tag[1], arq2, hdr2.tag[0], hdr2.tag[1]);
+
 	if ((hdr1.bits_per_pixel != 32) || (hdr1.compression != 3) ||
 			(hdr2.bits_per_pixel != 32) || (hdr2.compression != 3))
 		error(29, 0, "ou o arquivo '%s' (%d bpp, %d de compressão) ou o arquivo '%s' (%d bpp, %d de compressão) não está no formato adequado", arq1, hdr1.bits_per_pixel, hdr1.compression, arq2, hdr2.bits_per_pixel, hdr2.compression);
@@ -213,11 +223,11 @@ void ensina_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 	uint8_t *p;
 	p = mmap(NULL, 4 * hdr1.image_width * hdr1.image_height + hdr1.data_offset, PROT_READ, MAP_SHARED, fd1, 0);
 	if (p == ((void *) -1))
-		error(31, errno, "erro ao mapear as imagens na memória principal (offsets %d e %d)", hdr1.data_offset, hdr2.data_offset);
+		error(31, errno, "erro ao mapear a imagem '%s' na memória principal", arq1);
 	uint8_t *ptr1 = p + hdr1.data_offset;
 	p = mmap(NULL, 4 * hdr2.image_width * hdr2.image_height + hdr2.data_offset, PROT_READ, MAP_SHARED, fd2, 0);
 	if (p == ((void *) -1))
-		error(31, errno, "erro ao mapear as imagens na memória principal (offsets %d e %d)", hdr1.data_offset, hdr2.data_offset);
+		error(36, errno, "erro ao mapear a imagem '%s' na memória principal", arq2);
 	uint8_t *ptr2 = p + hdr2.data_offset;
 
 	int tam = RN->QT_TREINAMENTO + (hdr1.image_width - 2) * (hdr1.image_height - 2);
@@ -248,10 +258,16 @@ void ensina_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 		}
 	RN->QT_TREINAMENTO += (hdr1.image_width - 2) * (hdr1.image_height - 2);
 			
-	munmap(ptr1 - hdr1.data_offset, 4 * hdr1.image_width * hdr1.image_height + hdr1.data_offset);
-	munmap(ptr2 - hdr2.data_offset, 4 * hdr2.image_width * hdr2.image_height + hdr2.data_offset);
-	close(fd1);
-	close(fd2);
+	if (munmap(ptr1 - hdr1.data_offset, 4 * hdr1.image_width * hdr1.image_height + hdr1.data_offset) == -1)
+		error(37, errno, "erro ao desmapear o arquivo '%s' da memória", arq1);
+
+	if (munmap(ptr2 - hdr2.data_offset, 4 * hdr2.image_width * hdr2.image_height + hdr2.data_offset) == -1)
+		error(38, errno, "erro ao desmapear o arquivo '%s' da memória", arq2);
+
+	if (close(fd1) == -1)
+		error(39, errno, "erro ao fechar o arquivo '%s'", arq1);
+	if (close(fd2) == -1)
+		error(40, errno, "erro ao fechar o arquivo '%s'", arq2);
 }
 
 void processar_dados(MLP *RN, const char *arq)
@@ -260,7 +276,7 @@ void processar_dados(MLP *RN, const char *arq)
 	int fd = open(arq, O_RDONLY);
 
 	if (fd == -1)
-		error(14, errno, "erro ao abrir o arquivo '%s' para processar dados", arq);
+		error(4, errno, "erro ao abrir o arquivo '%s' para processar dados", arq);
 
 	FILE *instream = fdopen(fd, "r");
 
@@ -276,17 +292,19 @@ void processar_dados(MLP *RN, const char *arq)
 		output=(float*)xmalloc(sizeof(float)*RN->QT_NEU[RN->QT_LAYERS - 1]);
 		for (int j=0;j<RN->QT_INPUT;j++){
 			if (fscanf(instream, " %f", &input[j]) != 1)
-				error(22, errno, "dados para processar incorretos");
+				error(9, errno, "dados para processar incorretos");
 		}
 		execute(RN, input, output);
 		for (int j=0;j<RN->QT_NEU[RN->QT_LAYERS - 1];j++)
-			printf("%lf\n",output[j]);
+			printf("%f\n", output[j]);
 		free(input);
 		free(output);
 	}
 
-	fclose(instream);
-	close(fd);
+	if (fclose(instream) == EOF)
+		error(41, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+	if (close(fd) == -1)
+		error(42, errno, "erro ao fechar o arquivo '%s'", arq);
 }
 
 void mostra_help(const char *prog)
@@ -345,7 +363,7 @@ int main (int argc, char **argv, char **envp __attribute((unused)))
 				case 'b':
 					if (i+2 >= argc)
 						error(23, 0, "é necessário informar duas imagens para fazer o treinamento");
-					ensina_com_bmp(myNN, argv[i+1], argv[i+2]);
+					treinar_com_bmp(myNN, argv[i+1], argv[i+2]);
 					i += 2;
 					break;
 
