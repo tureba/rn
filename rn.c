@@ -313,6 +313,7 @@ float learn(MLP *RN, float *input, float *output){
 			}
 
 		}
+		free(ej_old);
 
 	}
 

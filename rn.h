@@ -15,6 +15,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <stdint.h>
+
 /**************************************************************************************************/
 
 extern float max_error;		//Define quando uma rede converiu (erro pequeno d+)
@@ -67,6 +69,7 @@ typedef struct _MLP{
 	dev_act_function dev_f;
 } MLP;
 
+#pragma pack (1)
 typedef struct _BMP_header {
 	uint8_t tag[2]; //must be 'BM'
 	uint32_t file_size;
@@ -84,6 +87,7 @@ typedef struct _BMP_header {
 	uint32_t colors_in_pallete; //must be 0
 	uint32_t important_colors;
 } BMP_header;
+#pragma pack ()
 
 /***************************************************************************************************
  Funcoes da RN: Inicializacao, Execucao e Aprendizagem
