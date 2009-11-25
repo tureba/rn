@@ -19,6 +19,7 @@
 #include <error.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include "rn.h"
 
@@ -27,13 +28,8 @@
  Funcoes de interface e chamada continua de treinamento
 ***************************************************************************************************/
 
-void ler_RN(MLP **RN, int fd)
+void ler_RN(MLP **RN, FILE *instream)
 {
-
-	FILE *instream = fdopen(fd, "r");
-
-	if (instream == NULL)
-		error(22, errno, "erro ao chamar fdopen");
 
 	float learning_rate;
 	int nInput, nLayers;
@@ -48,30 +44,20 @@ void ler_RN(MLP **RN, int fd)
 
 }
 
-void ler_RN_e_W(MLP **RN, int fd)
+void ler_RN_e_W(MLP **RN, FILE *instream)
 {
 	ler_RN(RN, instream);
 
-	FILE *instream = fdopen(fd, "r");
-
-	if (instream == NULL)
-		error(21, errno, "erro ao chamar fdopen");
-
-	ler_RN(RN, fd);
-
-	for (int k = 1; k < (*RN)->QT_LAYERS; k++)
-		for (int i = 0; i < (*RN)->QT_NEU[k-1]+1; i++)
+	for (int k = 0; k < (*RN)->QT_LAYERS; k++)
+		for (int i = 0; i < (k ? (*RN)->QT_NEU[k-1] : (*RN)->QT_INPUT) + 1; i++)
 			for (int j = 0; j < (*RN)->QT_NEU[k]; j++)
 				if (fscanf(instream, " %f", (*RN)->W[k][i] + j) != 1)
-					(*RN)->W[k][i][j] = uniforme01;
-					//error(4, 0, "o arquivo da rede neural não está completo");
+					(*RN)->W[k][i][j] = uniforme01 * 2.0 + 1.0;
 
 }
 
-void ler_treinamento(MLP *RN, int fd)
+void ler_treinamento(MLP *RN, FILE *instream)
 {
-
-	FILE *instream = fdopen(fd, "r");
 
 	int qtdd;
 
@@ -94,15 +80,20 @@ void ler_treinamento(MLP *RN, int fd)
 void mais_treinamento(MLP *RN, const char *arq)
 {
 
+	if (RN == NULL)
+		error(12, 0, "a rede neural não foi inicializada");
+
 	int fd = open(arq, O_RDONLY);
 
 	if (fd == -1)
 		error(10, errno, "erro ao abrir o arquivo de treinamento %s", arq);
 
-	if (RN == NULL)
-		error(12, 0, "a rede neural não foi inicializada");
+	FILE *instream = fdopen(fd, "r");
 
-	ler_treinamento(RN, fd);
+	if (instream == NULL)
+		error(22, errno, "erro ao chamar fdopen");
+
+	ler_treinamento(RN, instream);
 
 	close(fd);
 
@@ -111,20 +102,25 @@ void mais_treinamento(MLP *RN, const char *arq)
 void carregar_RN(MLP **RN, const char *arq)
 {
 
+	if (*RN != NULL)
+		error(2, 0, "a rede neural já foi inicializada");
+
 	int fd = open(arq, O_RDONLY);
 
 	if ((fd == -1) && (errno != ENOENT))
 		error(5, errno, "erro ao carregar a rede neural '%s'", arq);
 
-	if (*RN != NULL)
-		error(2, 0, "a rede neural já foi inicializada");
-
 	if ((fd == -1) && (errno == ENOENT)) {
-		ler_RN(RN, 0);
-		ler_treinamento(*RN, 0);
+		ler_RN(RN, stdin);
+		ler_treinamento(*RN, stdin);
 	} else {
-		ler_RN_e_W(RN, fd);
-		ler_treinamento(*RN, fd);
+		FILE *instream = fdopen(fd, "r");
+
+		if (instream == NULL)
+			error(22, errno, "erro ao chamar fdopen");
+
+		ler_RN_e_W(RN, instream);
+		ler_treinamento(*RN, instream);
 	}
 
 	close(fd);
@@ -188,6 +184,7 @@ void salvar_RN(MLP *RN, const char *arq)
 		fputc('\n', outstream);
 	}
 
+	fclose(outstream);
 	close(fd);
 
 }
@@ -202,51 +199,57 @@ void ensina_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 	if ((fd1 == -1) || (fd2 == -1))
 		error(26, errno, "erro ao abrir os arquivos '%s' e '%s'", arq1, arq2);
 
-	if ((read(fd1, &hdr1, sizeof(BMP_header)) == -1) || (read(fd1, &hdr2, sizeof(BMP_header)) == -1))
+	if ((read(fd1, &hdr1, sizeof(BMP_header)) == -1) || (read(fd2, &hdr2, sizeof(BMP_header)) == -1))
 		error(27, errno, "erro ao ler o cabeçalho do arquivo '%s' ou do arquivo '%s'", arq1, arq2);
 	if ((hdr1.tag[0] != 'B') || (hdr1.tag[1] != 'M') || (hdr2.tag[0] != 'B') || (hdr2.tag[1] != 'M'))
-		error(28, 0, "ou o arquivo '%s' ou o arquivo '%s' não é BMP", arq1, arq2);
-	if ((hdr1.color_planes != 1) || (hdr1.bits_per_pixel != 32) || (hdr1.compression != 0) || (hdr1.colors_in_pallete != 0) ||
-			(hdr2.color_planes != 1) || (hdr2.bits_per_pixel != 32) || (hdr2.compression != 0) || (hdr2.colors_in_pallete != 0))
-		error(29, 0, "ou o arquivo '%s' ou o arquivo '%s' não está no formato adequado", arq1, arq2);
+		error(28, 0, "ou o arquivo '%s' (%c%c) ou o arquivo '%s' (%c%c) não é BMP", arq1, hdr1.tag[0], hdr1.tag[1], arq2, hdr2.tag[0], hdr2.tag[1]);
+	//if ((hdr1.color_planes != 1) || (hdr1.bits_per_pixel != 32) || (hdr1.compression != 0) || (hdr1.colors_in_pallete != 0) ||
+	if ((hdr1.bits_per_pixel != 32) || (hdr1.compression != 3) ||
+			(hdr2.bits_per_pixel != 32) || (hdr2.compression != 3))
+		error(29, 0, "ou o arquivo '%s' (%d bpp, %d de compressão) ou o arquivo '%s' (%d bpp, %d de compressão) não está no formato adequado", arq1, hdr1.bits_per_pixel, hdr1.compression, arq2, hdr2.bits_per_pixel, hdr2.compression);
 
 	if ((hdr1.image_width != hdr2.image_width) || (hdr1.image_height != hdr2.image_height))
 		error(30, 0, "as imagens '%s' e '%s' não são do mesmo tamanho", arq1, arq2);
+	uint8_t *p;
+	p = mmap(NULL, 4 * hdr1.image_width * hdr1.image_height + hdr1.data_offset, PROT_READ, MAP_SHARED, fd1, 0);
+	if (p == ((void *) -1))
+		error(31, errno, "erro ao mapear as imagens na memória principal (offsets %d e %d)", hdr1.data_offset, hdr2.data_offset);
+	uint8_t *ptr1 = p + hdr1.data_offset;
+	p = mmap(NULL, 4 * hdr2.image_width * hdr2.image_height + hdr2.data_offset, PROT_READ, MAP_SHARED, fd2, 0);
+	if (p == ((void *) -1))
+		error(31, errno, "erro ao mapear as imagens na memória principal (offsets %d e %d)", hdr1.data_offset, hdr2.data_offset);
+	uint8_t *ptr2 = p + hdr2.data_offset;
 
-	uint32_t *ptr1 = mmap(NULL, 4 * hdr1.image_width * hdr1.image_height, PROT_NONE, MAP_SHARED, fd1, hdr1.offset);
-	uint32_t *ptr2 = mmap(NULL, 4 * hdr2.image_width * hdr2.image_height, PROT_NONE, MAP_SHARED, fd2, hdr2.offset);
-	if ((ptr1 == NULL) || (ptr2 == NULL))
-		error(31, errno, "erro ao mapear as imagens na memória principal");
+	int tam = RN->QT_TREINAMENTO + (hdr1.image_width - 2) * (hdr1.image_height - 2);
 
-	int tam = RN->QT_TREINAMENTO + (hdr1.image_width - 1) * (hdr1.image_height - 1);
-
-	if ((RN->TREINAMENTOS = xrealloc(RN->TREINAMENTOS, tam)) == NULL)
-		erro(33, 0, "erro ao realocar memória para o novo conjunto de treinamento");
+	if ((RN->TREINAMENTOS = xrealloc(RN->TREINAMENTOS, sizeof (float *) * tam)) == NULL)
+		error(33, 0, "erro ao realocar memória para o novo conjunto de treinamento");
 
 	for (int i = RN->QT_TREINAMENTO; i < tam; i++)
 		if ((RN->TREINAMENTOS[i] = xmalloc(sizeof(float) * (RN->QT_INPUT + RN->QT_NEU[RN->QT_LAYERS - 1]))) == NULL)
 			error(34, 0, "erro ao alocar mais memória");
 
-	for (int i = 1; i < (hdr1.image_width - 1); i++)
-		for (int j = 1; j < (hdr1.image_height - 1); j++) {
+	for (unsigned int i = 1; i < (hdr1.image_width - 1); i++)
+		for (unsigned int j = 1; j < (hdr1.image_height - 1); j++) {
 			tam -= 1;
 			int k = 0;
 			for (int a = -1; a <= 1; a++)
 				for (int b = -1; b <= 1; b++) {
-					RN->TREINAMENTOS[tam][k] = (((uint8_t *) ptr2 +((j+b) * hdr1.image_width + (i+a)))[0])/255.0f;
-					RN->TREINAMENTOS[tam][k+1] = (((uint8_t *) ptr2 +((j+b) * hdr1.image_width + (i+a)))[1])/255.0f;
-					RN->TREINAMENTOS[tam][k+2] = (((uint8_t *) ptr2 +((j+b) * hdr1.image_width + (i+a)))[2])/255.0f;
-					RN->TREINAMENTOS[tam][k+3] = (((uint8_t *) ptr2 +((j+b) * hdr1.image_width + (i+a)))[3])/255.0f;
-					k++;
+					RN->TREINAMENTOS[tam][k] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 0]/255.0f;
+					RN->TREINAMENTOS[tam][k + 1] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 1]/255.0f;
+					RN->TREINAMENTOS[tam][k + 2] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 2]/255.0f;
+					RN->TREINAMENTOS[tam][k + 3] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 3]/255.0f;
+					k += 4;
 				}
 			RN->TREINAMENTOS[tam][RN->QT_INPUT] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[0])/255.0f;
 			RN->TREINAMENTOS[tam][RN->QT_INPUT+1] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[1])/255.0f;
 			RN->TREINAMENTOS[tam][RN->QT_INPUT+2] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[2])/255.0f;
 			RN->TREINAMENTOS[tam][RN->QT_INPUT+3] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[3])/255.0f;
 		}
+	RN->QT_TREINAMENTO += (hdr1.image_width - 2) * (hdr1.image_height - 2);
 			
-	munmap(ptr1);
-	munmap(ptr2);
+	munmap(ptr1 - hdr1.data_offset, 4 * hdr1.image_width * hdr1.image_height + hdr1.data_offset);
+	munmap(ptr2 - hdr2.data_offset, 4 * hdr2.image_width * hdr2.image_height + hdr2.data_offset);
 	close(fd1);
 	close(fd2);
 }
@@ -254,7 +257,36 @@ void ensina_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 void processar_dados(MLP *RN, const char *arq)
 {
 
+	int fd = open(arq, O_RDONLY);
 
+	if (fd == -1)
+		error(14, errno, "erro ao abrir o arquivo '%s' para processar dados", arq);
+
+	FILE *instream = fdopen(fd, "r");
+
+	int qtdd;
+
+	if (fscanf(instream, " %d", &qtdd) != 1)
+		qtdd = 0;
+
+	float *input;
+	float *output;
+	for (int i = 0; i < qtdd; i++){
+		input=(float*)xmalloc(sizeof(float)*RN->QT_INPUT);
+		output=(float*)xmalloc(sizeof(float)*RN->QT_NEU[RN->QT_LAYERS - 1]);
+		for (int j=0;j<RN->QT_INPUT;j++){
+			if (fscanf(instream, " %f", &input[j]) != 1)
+				error(22, errno, "dados para processar incorretos");
+		}
+		execute(RN, input, output);
+		for (int j=0;j<RN->QT_NEU[RN->QT_LAYERS - 1];j++)
+			printf("%lf\n",output[j]);
+		free(input);
+		free(output);
+	}
+
+	fclose(instream);
+	close(fd);
 }
 
 void mostra_help(const char *prog)
@@ -279,13 +311,13 @@ void mostra_help(const char *prog)
 /***************************************************************************************************
  MAIN
 ***************************************************************************************************/
-int main (int argc, char **argv, char **envp)
+int main (int argc, char **argv, char **envp __attribute((unused)))
 {
 
 	MLP *myNN = NULL;
 	int num_dados = 0;
 	char *dados[argc];
-	for (int i = 2; i < argc; i++) {
+	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] == '-')
 			switch (argv[i][1]) {
 				case 'h':
