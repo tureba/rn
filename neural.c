@@ -10,6 +10,7 @@
 ***************************************/
 
 #define _POSIX_SOURCE
+#define _XOPEN_SOURCE
 
 #include <stdio.h>
 #include <time.h>
@@ -98,10 +99,10 @@ void mais_treinamento(MLP *RN, const char *arq)
 
 	ler_treinamento(RN, instream);
 
-	if (fclose(instream) == EOF)
-		error(47, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-//	if (close(fd) == -1)
-//		error(48, errno, "erro ao fechar o arquivo '%s'", arq);
+//	if (fclose(instream) == EOF)
+//		error(47, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+	if (close(fd) == -1)
+		error(48, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -128,11 +129,11 @@ void carregar_RN(MLP **RN, const char *arq)
 		ler_RN_e_W(RN, instream);
 		ler_treinamento(*RN, instream);
 
-		if (fclose(instream) == EOF)
-			error(45, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+//		if (fclose(instream) == EOF)
+//			error(45, errno, "erro ao fechar a stream do arquivo '%s'", arq);
 
-//		if (close(fd) == -1)
-//			error(46, errno, "erro ao fechar o arquivo '%s'", arq);
+		if (close(fd) == -1)
+			error(46, errno, "erro ao fechar o arquivo '%s'", arq);
 	}
 
 }
@@ -150,13 +151,15 @@ void treinar(MLP *RN)
 		erro /= (float) RN->QT_TREINAMENTO;
 		itr++;
 		if (verbose) {
-			a = max(100.0 * erro / max_error, 100.0 * itr / max_iter);
+			a = max(100.0 * max_error / erro, 100.0 * itr / max_iter);
 			while (a > progresso) {
 				putchar('.');
+				fflush(stdout);
 				progresso++;
 			}
 		}
 	} while ((erro >= max_error) && (itr < max_iter));
+	putchar('\n');
 
 }
 
@@ -173,12 +176,13 @@ void salvar_RN(MLP *RN, const char *arq)
 	if (outstream == NULL)
 		error(15, errno, "erro ao abrir o arquivo '%s' para salvamento da rede neural", arq);
 
-	if (fprintf(outstream, "%f\n%d\n%d\n\n", RN->lt, RN->QT_INPUT, RN->QT_LAYERS) < 0)
+	if (fprintf(outstream, "%f\n%d\n%d\n", RN->lt, RN->QT_INPUT, RN->QT_LAYERS) < 0)
 		error(16, 0, "erro ao escrever a rede neural no arquivo '%s'", arq);
 
 	for (int i = 0; i < RN->QT_LAYERS; i++)
 		if (fprintf(outstream, "%d ", RN->QT_NEU[i]) < 0)
 			error(17, 0, "erro ao escrever as informações da rede neural no arquivo '%s'", arq);
+	fputc('\n', outstream);
 	fputc('\n', outstream);
 
 	for (int k = 0; k < RN->QT_LAYERS; k++) {
@@ -201,10 +205,13 @@ void salvar_RN(MLP *RN, const char *arq)
 		fputc('\n', outstream);
 	}
 
-	if (fclose(outstream) == EOF)
-		error(43, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-//	if (close(fd) == -1)
-//		error(44, errno, "erro ao fechar o arquivo '%s'", arq);
+	fflush(outstream);
+//	if (fclose(outstream) == EOF)
+//		error(43, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+	if (fsync(fd) == -1)
+		error(59, errno, "erro ao sincronizar o arquivo '%s' com o disco", arq);
+	if (close(fd) == -1)
+		error(44, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -321,11 +328,11 @@ int processar_bmp(MLP *RN, const char *arq_e)
 	hdr_s.image_width -= 2;
 	hdr_s.image_height -= 2;
 	hdr_s.data_offset = sizeof(BMP_header);
-	if (write(fd_s, &hdr_s, sizeof(BMP_header) != sizeof(BMP_header)))
+	if (write(fd_s, &hdr_s, sizeof(BMP_header)) != sizeof(BMP_header))
 		error(57, errno, "erro ao escrever o cabeçalho BMP da imagem de saída '%s'", arq_s);
 
-	float entrada[RN->QT_INPUT], saida[RN->QT_NEU[RN->QT_LAYERS - 1]];
-	uint8_t isaida[RN->QT_NEU[RN->QT_LAYERS - 1]];
+	float *entrada = alloca(sizeof(float) * RN->QT_INPUT), *saida = alloca(sizeof(float) * RN->QT_NEU[RN->QT_LAYERS - 1]);
+	uint8_t *isaida = alloca(RN->QT_NEU[RN->QT_LAYERS - 1]);
 	for (unsigned int i = 1; i < (hdr_e.image_width - 1); i++)
 		for (unsigned int j = 1; j < (hdr_e.image_height - 1); j++) {
 			int k = 0;
@@ -339,7 +346,7 @@ int processar_bmp(MLP *RN, const char *arq_e)
 				}
 			execute(RN, entrada, saida);
 			for (int l = 0; l < RN->QT_NEU[RN->QT_LAYERS - 1]; l++)
-				isaida[l] = ((uint8_t) saida[l] * 255);
+				isaida[l] = ((uint8_t) (saida[l] * 255));
 
 			if (write(fd_s, isaida, (sizeof(uint8_t) * RN->QT_NEU[RN->QT_LAYERS - 1])) != (ssize_t) (sizeof(uint8_t) * RN->QT_NEU[RN->QT_LAYERS - 1]))
 				error(56, errno, "erro ao escrever a imagem de saída '%s'", arq_s);
@@ -351,6 +358,8 @@ int processar_bmp(MLP *RN, const char *arq_e)
 	if (close(fd_e) == -1)
 		error(54, errno, "erro ao fechar o arquivo de imagem '%s'", arq_e);
 
+	if (fsync(fd_s) == -1)
+		error(60, errno, "erro ao sincronizar o arquivo de imagem de saída '%s' com o disco", arq_s);
 	if (close(fd_s) == -1)
 		error(57, errno, "erro ao fechar o arquivo de imagem de saída '%s'", arq_s);
 
@@ -373,26 +382,22 @@ void processar_texto(MLP *RN, const char *arq)
 	if (fscanf(instream, " %d", &qtdd) != 1)
 		qtdd = 0;
 
-	float *input;
-	float *output;
+	float *input = (float *) alloca(sizeof(float) * RN->QT_INPUT);
+	float *output = (float *) alloca(sizeof(float) * RN->QT_NEU[RN->QT_LAYERS - 1]);
 	for (int i = 0; i < qtdd; i++){
-		input=(float*)xmalloc(sizeof(float)*RN->QT_INPUT);
-		output=(float*)xmalloc(sizeof(float)*RN->QT_NEU[RN->QT_LAYERS - 1]);
-		for (int j=0;j<RN->QT_INPUT;j++){
+		for (int j = 0; j < RN->QT_INPUT; j++){
 			if (fscanf(instream, " %f", &input[j]) != 1)
 				error(9, errno, "dados para processar incorretos");
 		}
 		execute(RN, input, output);
-		for (int j=0;j<RN->QT_NEU[RN->QT_LAYERS - 1];j++)
+		for (int j = 0; j < RN->QT_NEU[RN->QT_LAYERS - 1]; j++)
 			printf("%f\n", output[j]);
-		free(input);
-		free(output);
 	}
 
-	if (fclose(instream) == EOF)
-		error(41, errno, "erro ao fechar a stream do arquivo '%s'", arq);
-//	if (close(fd) == -1)
-//		error(42, errno, "erro ao fechar o arquivo '%s'", arq);
+//	if (fclose(instream) == EOF)
+//		error(41, errno, "erro ao fechar a stream do arquivo '%s'", arq);
+	if (close(fd) == -1)
+		error(42, errno, "erro ao fechar o arquivo '%s'", arq);
 
 }
 
@@ -431,6 +436,7 @@ int main (int argc, char **argv, char **envp __attribute((unused)))
 
 	MLP *myNN = NULL;
 	int num_dados = 0;
+	int precisa_treinar = 0;
 	char *dados[argc];
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] == '-')
@@ -461,6 +467,7 @@ int main (int argc, char **argv, char **envp __attribute((unused)))
 					if (i+2 >= argc)
 						error(23, 0, "é necessário informar duas imagens para fazer o treinamento");
 					treinar_com_bmp(myNN, argv[i+1], argv[i+2]);
+					precisa_treinar = 1;
 					i += 2;
 					break;
 
@@ -468,6 +475,7 @@ int main (int argc, char **argv, char **envp __attribute((unused)))
 					if (++i >= argc)
 						error(25, 0, "é necessário informar um arquivo de treinamento");
 					mais_treinamento(myNN, argv[i]);
+					precisa_treinar = 1;
 					break;
 
 			}
@@ -481,9 +489,10 @@ int main (int argc, char **argv, char **envp __attribute((unused)))
 	if (myNN == NULL)
 		error(0, 0, "é necessário carregar uma rede neural");
 
-	treinar(myNN);
-
-	salvar_RN(myNN, argv[1]);
+	if (precisa_treinar) {
+		treinar(myNN);
+		salvar_RN(myNN, argv[1]);
+	}
 
 	while (num_dados --> 0)
 		processar_dados(myNN, dados[num_dados]);
