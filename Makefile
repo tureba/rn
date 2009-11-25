@@ -1,9 +1,9 @@
 
 CFLAGS=-lm -pipe -Wall -Wextra -std=c99 -ggdb -pedantic -pg
 
-all: NEURAL
+all: neural
 
-NEURAL: rn.o
+neural: rn.o
 
 clean:
-	-rm -f NEURAL *.o
+	-rm -f neural *.o
