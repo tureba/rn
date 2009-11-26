@@ -40,7 +40,7 @@ void ler_RN(MLP **RN, FILE *instream)
 	if (fscanf(instream, " %f %d %d", &learning_rate, &nInput, &nLayers) != 3)
 		error(6, 0, "o arquivo da rede neural não está completo");
 
-	int *nNeurons = xmalloc(sizeof(int) * (nLayers + 1));
+	int *nNeurons = alloca(sizeof(int) * nLayers);
 	for (int i = 0; i < nLayers; i++)
 		if (fscanf(instream, " %d", nNeurons + i) != 1)
 			error(7, 0, "o arquivo da rede neural não está completo");
@@ -217,7 +217,7 @@ void salvar_RN(MLP *RN, const char *arq)
 
 void treinar_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 {
-	if ((RN->QT_INPUT != 36) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 4))
+	if ((RN->QT_INPUT != 27) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 3))
 		error(32, 0, "a rede neural não tem a topologia certa para processar imagens");
 
 	BMP_header hdr1, hdr2;
@@ -256,22 +256,20 @@ void treinar_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 		if ((RN->TREINAMENTOS[i] = xmalloc(sizeof(float) * (RN->QT_INPUT + RN->QT_NEU[RN->QT_LAYERS - 1]))) == NULL)
 			error(34, 0, "erro ao alocar mais memória");
 
-	for (unsigned int i = 1; i < (hdr1.image_width - 1); i++)
-		for (unsigned int j = 1; j < (hdr1.image_height - 1); j++) {
+	for (unsigned int y = 1; y < (hdr1.image_height - 1); y++)
+		for (unsigned int x = 1; x < (hdr1.image_width - 1); x++) {
 			tam -= 1;
 			int k = 0;
 			for (int a = -1; a <= 1; a++)
 				for (int b = -1; b <= 1; b++) {
-					RN->TREINAMENTOS[tam][k] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 0]/255.0f;
-					RN->TREINAMENTOS[tam][k + 1] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 1]/255.0f;
-					RN->TREINAMENTOS[tam][k + 2] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 2]/255.0f;
-					RN->TREINAMENTOS[tam][k + 3] = ptr1[((j+b) * hdr1.image_width + (i+a)) * 4 + 3]/255.0f;
-					k += 4;
+					RN->TREINAMENTOS[tam][k + 0] = ptr1[((x+a) + hdr1.image_width * (y+b)) * 4 + 1]/255.0f;
+					RN->TREINAMENTOS[tam][k + 1] = ptr1[((x+a) + hdr1.image_width * (y+b)) * 4 + 2]/255.0f;
+					RN->TREINAMENTOS[tam][k + 2] = ptr1[((x+a) + hdr1.image_width * (y+b)) * 4 + 3]/255.0f;
+					k += 3;
 				}
-			RN->TREINAMENTOS[tam][RN->QT_INPUT] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[0])/255.0f;
-			RN->TREINAMENTOS[tam][RN->QT_INPUT+1] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[1])/255.0f;
-			RN->TREINAMENTOS[tam][RN->QT_INPUT+2] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[2])/255.0f;
-			RN->TREINAMENTOS[tam][RN->QT_INPUT+3] = (((uint8_t *) ptr2 +(j * hdr1.image_width + i))[3])/255.0f;
+			RN->TREINAMENTOS[tam][RN->QT_INPUT] = (((uint8_t *) ptr2 + (x + hdr1.image_width * y))[1])/255.0f;
+			RN->TREINAMENTOS[tam][RN->QT_INPUT+1] = (((uint8_t *) ptr2 + (x + hdr1.image_width * y))[2])/255.0f;
+			RN->TREINAMENTOS[tam][RN->QT_INPUT+2] = (((uint8_t *) ptr2 + (x + hdr1.image_width * y))[3])/255.0f;
 		}
 	RN->QT_TREINAMENTO += (hdr1.image_width - 2) * (hdr1.image_height - 2);
 			
@@ -289,7 +287,7 @@ void treinar_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 
 int processar_bmp(MLP *RN, const char *arq_e)
 {
-	if ((RN->QT_INPUT != 36) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 4))
+	if ((RN->QT_INPUT != 27) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 3))
 		error(49, 0, "a rede neural não tem a topologia certa para processar imagens");
 
 	BMP_header hdr_e, hdr_s;
@@ -327,28 +325,29 @@ int processar_bmp(MLP *RN, const char *arq_e)
 	memcpy(&hdr_s, &hdr_e, sizeof(BMP_header));
 	hdr_s.image_width -= 2;
 	hdr_s.image_height -= 2;
+	hdr_s.file_size = sizeof(BMP_header) + (hdr_s.image_size = hdr_s.image_width * hdr_s.image_height * 4);
 	hdr_s.data_offset = sizeof(BMP_header);
 	if (write(fd_s, &hdr_s, sizeof(BMP_header)) != sizeof(BMP_header))
 		error(57, errno, "erro ao escrever o cabeçalho BMP da imagem de saída '%s'", arq_s);
 
 	float *entrada = alloca(sizeof(float) * RN->QT_INPUT), *saida = alloca(sizeof(float) * RN->QT_NEU[RN->QT_LAYERS - 1]);
-	uint8_t *isaida = alloca(RN->QT_NEU[RN->QT_LAYERS - 1]);
-	for (unsigned int i = 1; i < (hdr_e.image_width - 1); i++)
-		for (unsigned int j = 1; j < (hdr_e.image_height - 1); j++) {
+	uint8_t *isaida = alloca(RN->QT_NEU[RN->QT_LAYERS - 1] + 1);
+	isaida[0] = 0x00;
+	for (unsigned int y = 1; y < (hdr_e.image_height - 1); y++)
+		for (unsigned int x = 1; x < (hdr_e.image_width - 1); x++) {
 			int k = 0;
 			for (int a = -1; a <= 1; a++)
 				for (int b = -1; b <= 1; b++) {
-					entrada[k] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 0]/255.0f;
-					entrada[k + 1] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 1]/255.0f;
-					entrada[k + 2] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 2]/255.0f;
-					entrada[k + 3] = ptr[((j+b) * hdr_e.image_width + (i+a)) * 4 + 3]/255.0f;
-					k += 4;
+					entrada[k + 0] = ptr[((x+a) + hdr_e.image_width * (y+b)) * 4 + 1]/255.0f;
+					entrada[k + 1] = ptr[((x+a) + hdr_e.image_width * (y+b)) * 4 + 2]/255.0f;
+					entrada[k + 2] = ptr[((x+a) + hdr_e.image_width * (y+b)) * 4 + 3]/255.0f;
+					k += 3;
 				}
 			execute(RN, entrada, saida);
 			for (int l = 0; l < RN->QT_NEU[RN->QT_LAYERS - 1]; l++)
-				isaida[l] = ((uint8_t) (saida[l] * 255));
+				isaida[l + 1] = ((uint8_t) (saida[l] * 255.0));
 
-			if (write(fd_s, isaida, (sizeof(uint8_t) * RN->QT_NEU[RN->QT_LAYERS - 1])) != (ssize_t) (sizeof(uint8_t) * RN->QT_NEU[RN->QT_LAYERS - 1]))
+			if (write(fd_s, isaida, (sizeof(uint8_t) * (RN->QT_NEU[RN->QT_LAYERS - 1] + 1))) != (ssize_t) (sizeof(uint8_t) * (RN->QT_NEU[RN->QT_LAYERS - 1] + 1)))
 				error(56, errno, "erro ao escrever a imagem de saída '%s'", arq_s);
 		}
 

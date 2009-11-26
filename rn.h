@@ -92,6 +92,7 @@ typedef struct _BMP_header {
 	uint32_t vertical_resolution;
 	uint32_t colors_in_pallete; //must be 0
 	uint32_t important_colors;
+	uint8_t pad[10];
 } BMP_header;
 #pragma pack ()
 

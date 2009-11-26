@@ -1,5 +1,5 @@
 
-CFLAGS=-lm -pipe -Wall -Wextra -std=c99 -ggdb -pedantic -pg
+CFLAGS=-lm -pipe -Wall -Wextra -std=c99 -ggdb -pg
 
 all: neural
 
