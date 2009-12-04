@@ -151,7 +151,7 @@ void treinar(MLP *RN)
 		erro /= (float) RN->QT_TREINAMENTO;
 		itr++;
 		if (verbose) {
-			a = max(100.0 * max_error / erro, 100.0 * itr / max_iter);
+			a = 100.0 * max((max_error / erro), (itr / max_iter));
 			while (a > progresso) {
 				putchar('.');
 				fflush(stdout);
@@ -288,7 +288,7 @@ void treinar_com_bmp(MLP *RN, const char *arq1, const char *arq2)
 int processar_bmp(MLP *RN, const char *arq_e)
 {
 	if ((RN->QT_INPUT != 27) || (RN->QT_NEU[RN->QT_LAYERS - 1] != 3))
-		error(49, 0, "a rede neural não tem a topologia certa para processar imagens");
+		return 0;
 
 	BMP_header hdr_e, hdr_s;
 	int fd_e = open(arq_e, O_RDONLY);
@@ -460,6 +460,7 @@ int main (int argc, char **argv, char **envp __attribute((unused)))
 						error(11, 0, "é necessário informar o erro máximo do treinamento");
 					if (sscanf(argv[i], "%f", &max_error) != 1)
 						error(13, 0, "o erro foi fornecido incorretamente");
+					precisa_treinar = 1;
 					break;
 
 				case 'b':
