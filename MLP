@@ -1,0 +1,81 @@
+/*
+	Artificial Neural Networks Library - MLP implementation
+
+	Copyright (C) 2010 Arthur Nascimento <tureba@gmail.com>
+
+	This program is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#ifndef MLP_CLASS
+#define MLP_CLASS
+
+template <typename T = float>
+class MLP
+{
+
+private:
+	int num_layers;        // number of layers
+	int *size_layers;      // number of neurons in each layer
+
+	//int QT_INPUT;	//Qt de entradas // TODO: substituir por _num_layers
+	T learning_tax;        // learning tax
+	T learning_momentum;   // learning momentum
+	T **value_noF;         // value of the neuron before the activation function
+	T ***w;                // weights of the network
+	int num_training_sets; // number of training sets
+	T **training_sets;     // training sets
+
+public:
+	int max_iter;
+	float max_error;
+
+	typedef T (MLP::*t_function)(T);
+	t_function activation_function;
+	t_function activation_function_derivative;
+
+private:
+	/* default constructor is inaccessible */
+	MLP () {}
+
+	void init (int _num_layers, int *_size_layers, T _learning_tax, T _learning_momentum);
+	void clean ();
+	void load (const char *filename);
+	void copy (const MLP<T> &NN);
+
+public:
+	MLP (int _num_layers, int *_size_layers, T _learning_tax, T _learning_momentum);
+	MLP (const char *filename);
+	MLP (const MLP<T> &NN);
+
+	float learn (T *input, T *output);
+	float learn (const char *input, const char *output);
+	float learn (int ifd, int ofd);
+
+	void execute (T *input, T *output);
+	void execute (const char *input, const char *output);
+	void execute (int ifd);
+
+
+	T sigmoid (T x);
+	T dev_sigmoid (T x);
+
+	T tanh (T x);
+	T dev_tanh (T x);
+};
+
+#include "MLP.tcc"
+
+#endif //MLP_CLASS
+
+/* vim: set syntax=cpp ts=8: */
